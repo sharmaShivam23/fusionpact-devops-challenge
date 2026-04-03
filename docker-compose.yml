@@ -1,13 +1,14 @@
 version: '3.8'
 services:
   frontend:
-    build: ./frontend
+
+    image: ${DOCKER_USERNAME}/fusionpact-frontend:latest
     ports:
       - "80:80"
     restart: always
 
   backend:
-    build: ./backend
+    image: ${DOCKER_USERNAME}/fusionpact-backend:latest
     ports:
       - "8000:8000"
     volumes:

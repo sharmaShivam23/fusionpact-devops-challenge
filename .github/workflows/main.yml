@@ -1,24 +1,58 @@
-name: CI/CD Pipeline to Amazon Linux EC2
+name: Deploy Fusionpact Stack to Amazon Linux
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd fusionpact-devops-challenge
-            git pull origin main
-            docker-compose up -d --build
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/fusionpact-backend:latest
+
+    - name: Build and push Frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/fusionpact-frontend:latest
+
+    - name: Deploy to EC2 Amazon Linux
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ec2-user
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # 1. Ensure project directory exists and is up to date
+          if [ ! -d "fusionpact-devops-challenge" ]; then
+            git clone https://github.com/${{ github.repository }}.git fusionpact-devops-challenge
+          fi
+          
+          cd fusionpact-devops-challenge
+          git pull origin main
+          
+          # 2. Pull the newly built images from Docker Hub
+          sudo docker pull ${{ secrets.DOCKER_USERNAME }}/fusionpact-backend:latest
+          sudo docker pull ${{ secrets.DOCKER_USERNAME }}/fusionpact-frontend:latest
+          
+          # 3. Restart the stack to apply the new images
+          sudo docker compose down
+          sudo docker compose up -d
+          
+          # 4. Cleanup old unused images to save EC2 disk space
+          sudo docker system prune -af
